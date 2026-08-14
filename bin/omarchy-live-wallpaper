@@ -41,13 +41,15 @@ kill_mpvpaper() {
 }
 
 # Wait until mpvpaper's layer has committed with real content on screen.
+# When a pid is given, only that instance counts — so starting a new video
+# over an old one can wait for the new layer instead of the old one.
 wait_for_mpvpaper() {
-  local timeout=${1:-8} grace=${2:-0.4}
+  local pid=${1:-0} timeout=${2:-8} grace=${3:-0.4}
   local end=$((SECONDS + timeout))
   while (( SECONDS < end )); do
-    if hyprctl layers -j 2>/dev/null | jq -e \
+    if hyprctl layers -j 2>/dev/null | jq -e --argjson p "$pid" \
       'to_entries[] | .value.levels | to_entries[] | .value[] |
-       select(.namespace == "mpvpaper" and .w > 0 and .h > 0)' \
+       select(.namespace == "mpvpaper" and .w > 0 and .h > 0 and ($p == 0 or .pid == $p))' \
       >/dev/null 2>&1; then
       sleep "$grace"
       return 0
@@ -55,6 +57,18 @@ wait_for_mpvpaper() {
     sleep 0.1
   done
   return 1
+}
+
+# Kill a specific mpvpaper pid, falling back to SIGKILL if it won't die.
+kill_mpvpaper_pid() {
+  local pid="$1"
+  [[ -n $pid ]] || return 0
+  kill "$pid" 2>/dev/null || return 0
+  for _ in {1..10}; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+  done
+  kill -9 "$pid" 2>/dev/null || true
 }
 
 case "${1:-}" in
@@ -69,10 +83,13 @@ case "${1:-}" in
     "$BIN_DIR/omarchy-live-deps" || exit 1
     video=$(realpath "$video")
 
-    # Switching live -> live: just swap the process. The theme wallpaper
-    # always sits behind the video, so there is never a blackout gap.
+    # Switching live -> live: start the new video BEFORE dropping the old
+    # one, and wait for the new layer to actually render. The theme wallpaper
+    # stays behind the video, so the old frame is replaced by the new one with
+    # no static/black flash in between.
+    old_video=""
     if pgrep -x mpvpaper >/dev/null 2>&1; then
-      kill_mpvpaper
+      old_video=$(readlink -f "$LIVE_LINK" 2>/dev/null || true)
     fi
 
     ln -nsf "$video" "$LIVE_LINK"
@@ -81,12 +98,30 @@ case "${1:-}" in
     # windows. Theme changes only swap the static behind the video, so they
     # never disturb the live wallpaper.
     nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS" '*' "$video" >/dev/null 2>&1 &
+    new_pid=$!
 
-    if ! wait_for_mpvpaper; then
-      kill_mpvpaper
-      rm -f "$LIVE_LINK"
+    if ! wait_for_mpvpaper "$new_pid"; then
+      kill_mpvpaper_pid "$new_pid"
+      if [[ -n $old_video && -f $old_video ]]; then
+        ln -nsf "$old_video" "$LIVE_LINK"
+      else
+        rm -f "$LIVE_LINK"
+      fi
       echo "live wallpaper failed to start: $video" >&2
       exit 1
+    fi
+
+    # New video is rendering; any previous instances are now redundant.
+    old_pids=$(pgrep -x mpvpaper | grep -vx "$new_pid" || true)
+    if [[ -n $old_pids ]]; then
+      kill $old_pids 2>/dev/null || true
+      for _ in {1..10}; do
+        remaining=$(pgrep -x mpvpaper | grep -vx "$new_pid" || true)
+        [[ -z $remaining ]] && break
+        sleep 0.1
+      done
+      remaining=$(pgrep -x mpvpaper | grep -vx "$new_pid" || true)
+      [[ -n $remaining ]] && kill -9 $remaining 2>/dev/null || true
     fi
 
     echo "live wallpaper: $video"
