@@ -18,7 +18,11 @@ LIVE_LINK="$HOME/.local/state/omarchy/live-wallpaper/current"
 mkdir -p "$POSTER_DIR"
 : > "$INDEX_FILE"
 
+# The shared user folder is theme-independent, so live wallpapers stay in the
+# grid no matter which theme is active. Theme-shipped and theme-scoped user
+# live folders are scanned too.
 video_dirs=()
+[[ -d "$HOME/.config/omarchy/backgrounds/live" ]] && video_dirs+=("$HOME/.config/omarchy/backgrounds/live")
 [[ -d "$STATE_BG/live" ]] && video_dirs+=("$STATE_BG/live")
 [[ -d "$USER_BG/live" ]] && video_dirs+=("$USER_BG/live")
 
