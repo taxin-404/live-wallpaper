@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# omarchy-bg-set — apply a picker selection: a live poster starts a video
+# wallpaper; anything else is treated as a static image.
+set -euo pipefail
+
+path="${1:-}"
+[[ -n $path ]] || { echo "usage: omarchy-bg-set <selected-path>" >&2; exit 1; }
+
+POSTER_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/live-posters"
+INDEX_FILE="$POSTER_DIR/index"
+video=""
+
+if [[ -f $INDEX_FILE ]]; then
+  video=$(awk -F '\t' -v p="$path" '$1 == p { print $2; exit }' "$INDEX_FILE")
+fi
+
+if [[ -n $video && -f $video ]]; then
+  omarchy-live-wallpaper set "$video"
+else
+  omarchy-live-wallpaper stop
+  omarchy-theme-bg-set "$path"
+fi

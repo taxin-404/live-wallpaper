@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# omarchy-bg-switcher — background picker that shows static images alongside
+# live video wallpapers (from the <theme>/backgrounds/live/ folders).
+#
+# Mirrors the stock omarchy-theme-bg-switcher but adds a poster for every video
+# in the `live/` subfolders, so live wallpapers are selectable from the same
+# Super+Ctrl+Space grid. Prints the picked path (an image, or a live poster).
+set -euo pipefail
+
+theme_name=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
+current_background=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)
+STATE_BG="$HOME/.local/state/omarchy/current/theme/backgrounds"
+USER_BG="$HOME/.config/omarchy/backgrounds/$theme_name"
+POSTER_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/live-posters"
+INDEX_FILE="$POSTER_DIR/index"
+LIVE_LINK="$HOME/.local/state/omarchy/live-wallpaper/current"
+
+mkdir -p "$POSTER_DIR"
+: > "$INDEX_FILE"
+
+video_dirs=()
+[[ -d "$STATE_BG/live" ]] && video_dirs+=("$STATE_BG/live")
+[[ -d "$USER_BG/live" ]] && video_dirs+=("$USER_BG/live")
+
+live_video=""
+if [[ -L $LIVE_LINK && -f "$(readlink -f "$LIVE_LINK" 2>/dev/null)" ]]; then
+  live_video=$(readlink -f "$LIVE_LINK")
+fi
+
+selected=""
+if (( ${#video_dirs[@]} > 0 )); then
+  while IFS= read -r -d '' v; do
+    poster="$POSTER_DIR/$(printf '%s' "$v" | md5sum | cut -d ' ' -f 1).jpg"
+    printf '%s\t%s\n' "$poster" "$v" >> "$INDEX_FILE"
+    if [[ ! -f $poster ]]; then
+      ffmpeg -hide_banner -loglevel error -ss 0.5 -i "$v" -frames:v 1 -q:v 3 -y "$poster" >/dev/null 2>&1 || true
+    fi
+    if [[ -n $live_video && "$live_video" == "$(realpath "$v")" ]]; then
+      selected="$poster"
+    fi
+  done < <(find "${video_dirs[@]}" -maxdepth 1 -type f \
+      \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' -o -iname '*.avi' \) \
+      -print0 2>/dev/null | sort -z)
+fi
+
+# With no live wallpaper active, highlight the currently shown static image.
+if [[ -z $live_video && -z $selected && -n $current_background ]]; then
+  selected="$current_background"
+fi
+
+dirs=()
+[[ -d $STATE_BG ]] && dirs+=("$STATE_BG")
+[[ -d $USER_BG ]] && dirs+=("$USER_BG")
+[[ -d $POSTER_DIR ]] && dirs+=("$POSTER_DIR")
+
+omarchy-menu-images --selected "$selected" "${dirs[@]}"

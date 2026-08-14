@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# omarchy-live-wallpaper — control mpvpaper live video wallpapers.
+#
+# Usage:
+#   omarchy-live-wallpaper set <video>   start a video as the live wallpaper
+#   omarchy-live-wallpaper stop          stop the live wallpaper (restores static)
+#   omarchy-live-wallpaper restore       restart the saved live wallpaper if any
+#   omarchy-live-wallpaper status        print the current live video or "none"
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/live"
+LIVE_LINK="$STATE_DIR/current"
+PREVIOUS_FILE="$STATE_DIR/previous"
+TRANSPARENT="$CACHE_DIR/transparent.png"
+MPV_OPTS="no-audio --loop --hwdec=auto-copy"
+
+mkdir -p "$STATE_DIR" "$CACHE_DIR"
+
+ensure_transparent() {
+  if [[ ! -f $TRANSPARENT ]]; then
+    # -pix_fmt rgba is required: without it ffmpeg's png encoder writes an
+    # opaque RGB frame and the transparent "clear" background shows black.
+    ffmpeg -hide_banner -loglevel error -f lavfi -i "color=black@0.0:s=1920x1080:r=1" \
+      -frames:v 1 -pix_fmt rgba -y "$TRANSPARENT" >/dev/null 2>&1 || true
+  fi
+}
+
+is_active() {
+  [[ -L $LIVE_LINK && -f "$(readlink -f "$LIVE_LINK" 2>/dev/null)" ]]
+}
+
+# First static image of the current theme, used when we have no `previous` to
+# fall back on (e.g. `stop` after a login-restore that never captured one).
+theme_default_bg() {
+  local dir="$HOME/.local/state/omarchy/current/theme/backgrounds"
+  [[ -d $dir ]] || return 0
+  local f
+  for f in "$dir"/*.jpg "$dir"/*.jpeg "$dir"/*.png "$dir"/*.webp; do
+    [[ -f $f ]] && { echo "$f"; return 0; }
+  done
+  return 0
+}
+
+# Remember the static background showing right now, unless we already have one.
+capture_previous() {
+  [[ -f $PREVIOUS_FILE ]] && return 0
+  local prev
+  prev=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)
+  if [[ -n $prev && -f $prev && "$prev" != "$TRANSPARENT" ]]; then
+    printf '%s\n' "$prev" > "$PREVIOUS_FILE"
+  fi
+}
+
+# Put a static image back on screen and clear the live state. Uses the saved
+# `previous` wallpaper, falling back to the theme's first image.
+restore_static() {
+  local prev=""
+  [[ -f $PREVIOUS_FILE ]] && prev=$(cat "$PREVIOUS_FILE")
+  rm -f "$LIVE_LINK" "$PREVIOUS_FILE"
+  if [[ -n $prev && -f $prev ]]; then
+    omarchy-theme-bg-set "$prev"
+  else
+    local def
+    def=$(theme_default_bg)
+    if [[ -n $def && -f $def ]]; then
+      omarchy-theme-bg-set "$def"
+    fi
+  fi
+}
+
+# mpvpaper can ignore SIGTERM when its video failed to open (its cleanup
+# handler hangs on a dead mpv), so fall back to SIGKILL if it won't die.
+kill_mpvpaper() {
+  pkill -x mpvpaper 2>/dev/null || true
+  for _ in {1..10}; do
+    pgrep -x mpvpaper >/dev/null 2>&1 || return 0
+    sleep 0.1
+  done
+  pkill -9 -x mpvpaper 2>/dev/null || true
+}
+
+# Wait until mpvpaper's layer has committed with real content on screen.
+wait_for_mpvpaper() {
+  local timeout=${1:-8} grace=${2:-0.4}
+  local end=$((SECONDS + timeout))
+  while (( SECONDS < end )); do
+    if hyprctl layers -j 2>/dev/null | jq -e \
+      'to_entries[] | .value.levels | to_entries[] | .value[] |
+       select(.namespace == "mpvpaper" and .w > 0 and .h > 0)' \
+      >/dev/null 2>&1; then
+      sleep "$grace"
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+case "${1:-}" in
+  set)
+    video="${2:-}"
+    [[ -n $video && -f $video ]] || { echo "not a file: ${video:-<none>}" >&2; exit 1; }
+    video=$(realpath "$video")
+
+    # Switching live -> live: bring the static back first, so there is never a
+    # transparent (black) gap while the new video warms up. Restore BEFORE
+    # killing the old mpvpaper — otherwise its layer dies while the background
+    # is still transparent.
+    if pgrep -x mpvpaper >/dev/null 2>&1; then
+      restore_static
+      kill_mpvpaper
+    fi
+
+    capture_previous
+    ensure_transparent
+    ln -nsf "$video" "$LIVE_LINK"
+
+    # Start the video but keep the static wallpaper on screen until the
+    # mpvpaper layer is actually rendering; only then clear the background.
+    nohup mpvpaper --auto-pause -o "$MPV_OPTS" '*' "$video" >/dev/null 2>&1 &
+
+    if ! wait_for_mpvpaper; then
+      kill_mpvpaper
+      rm -f "$LIVE_LINK"
+      if [[ -f $PREVIOUS_FILE ]]; then
+        omarchy-theme-bg-set "$(cat "$PREVIOUS_FILE")"
+      fi
+      rm -f "$PREVIOUS_FILE"
+      echo "live wallpaper failed to start: $video" >&2
+      exit 1
+    fi
+
+    omarchy-theme-bg-set "$TRANSPARENT"
+    echo "live wallpaper: $video"
+    ;;
+  stop)
+    kill_mpvpaper
+    restore_static
+    echo "live wallpaper stopped"
+    ;;
+  restore)
+    is_active || exit 0
+    exec "$0" set "$(readlink -f "$LIVE_LINK")"
+    ;;
+  status)
+    if is_active; then
+      echo "$(readlink -f "$LIVE_LINK")"
+    else
+      echo "none"
+    fi
+    ;;
+  *)
+    echo "usage: omarchy-live-wallpaper {set <video>|stop|restore|status}" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "taxin.live-wallpaper",
+  "name": "Live Wallpaper",
+  "version": "1.0.0",
+  "author": "taxin",
+  "license": "MIT",
+  "description": "mpvpaper live video wallpapers in the background switcher (Super+Ctrl+Space).",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
