@@ -6,8 +6,10 @@ no manual steps.
 
 ## Requirements
 
-- [mpvpaper](https://aur.archlinux.org/packages/mpvpaper) (AUR) — install it
-  first:
+- [mpvpaper](https://aur.archlinux.org/packages/mpvpaper) (AUR). If it is
+  missing when you first set a live wallpaper, the plugin opens a terminal and
+  runs the install for you (type your sudo password there). You can also
+  install it manually:
 
 ```bash
 yay -S mpvpaper

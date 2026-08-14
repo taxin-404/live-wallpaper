@@ -61,10 +61,25 @@ case "${1:-}" in
     video="${2:-}"
     [[ -n $video && -f $video ]] || { echo "not a file: ${video:-<none>}" >&2; exit 1; }
     is_video "$video" || { echo "not a video file: $video" >&2; exit 1; }
-    command -v mpvpaper >/dev/null 2>&1 || {
-      echo "mpvpaper is not installed. Install it first: yay -S mpvpaper" >&2
-      exit 1
-    }
+
+    # mpvpaper (AUR) is required. If it is missing, open a floating terminal
+    # that runs the install so the user can type their sudo password, then
+    # wait for it to finish before starting the video.
+    if ! command -v mpvpaper >/dev/null 2>&1; then
+      echo "mpvpaper is not installed — launching the installer..." >&2
+      if command -v omarchy-launch-floating-terminal-with-presentation >/dev/null 2>&1; then
+        omarchy-launch-floating-terminal-with-presentation 'yay -S --noconfirm mpvpaper' \
+          >/dev/null 2>&1 || true
+        for _ in {1..600}; do
+          command -v mpvpaper >/dev/null 2>&1 && break
+          sleep 1
+        done
+      fi
+      if ! command -v mpvpaper >/dev/null 2>&1; then
+        echo "mpvpaper is still not installed. Run: yay -S mpvpaper" >&2
+        exit 1
+      fi
+    fi
     video=$(realpath "$video")
 
     # Switching live -> live: just swap the process. The theme wallpaper
