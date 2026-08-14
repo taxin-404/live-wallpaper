@@ -38,7 +38,7 @@ sed -i '/\/\/ omarchy-live-wallpaper-menu-start/,/\/\/ omarchy-live-wallpaper-me
 sed -i '/"style\.background":/d' "$MENU_EXT"
 
 MENU_BLOCK='  // omarchy-live-wallpaper-menu-start
-  "style.background": {"icon":"","label":"Background","aliases":["background","wallpaper"],"when":"[ -x \"'$PLUGIN_DIR'/bin/omarchy-bg-switcher\" ]","action":"background=\"'$PLUGIN_DIR'/bin/omarchy-bg-switcher\"; [[ -n $background ]] && \"'$PLUGIN_DIR'/bin/omarchy-bg-set\" \"$background\""}
+  "style.background": {"icon":"","label":"Background","aliases":["background","wallpaper"],"when":"[ -x \"'$PLUGIN_DIR'/bin/omarchy-bg-switcher\" ]","action":"background=\"$('"$PLUGIN_DIR"'/bin/omarchy-bg-switcher)\"; [[ -n $background ]] && \"'$PLUGIN_DIR'/bin/omarchy-bg-set\" \"$background\""}
   // omarchy-live-wallpaper-menu-end'
 
 python3 - "$MENU_EXT" "$MENU_BLOCK" <<'PY'
