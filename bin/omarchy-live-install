@@ -5,7 +5,7 @@
 #
 #   - adds the `style.background` menu override (absolute paths + a `when:`
 #     guard so the row auto-hides once this plugin is removed)
-#   - ensures the system dependencies (mpvpaper, ffmpeg, jq) on every load
+#   - ensures the system dependencies (mpvpaper, ffmpeg, jq, socat) on every load
 #   - removes any leftover theme-set hook from older installs (theme changes
 #     no longer need one: the video runs above the theme wallpaper)
 #
@@ -20,8 +20,8 @@ HOOK_PATH="$HOME/.config/omarchy/hooks/theme-set.d/10-live-wallpaper.sh"
 
 # ------------------------------------------------- system dependencies
 
-# Ensure mpvpaper (AUR), ffmpeg and jq on every load. This is cheap when they
-# are present; it only opens an install terminal when something is actually
+# Ensure mpvpaper (AUR), ffmpeg, jq and socat on every load. This is cheap when
+# they are present; it only opens an install terminal when something is actually
 # missing — so a single `omarchy plugin add ... --enable` (or any shell load
 # with a missing dep) self-heals. `set` re-checks too.
 "$PLUGIN_DIR/bin/omarchy-live-deps" || true

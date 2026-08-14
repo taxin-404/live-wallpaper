@@ -11,12 +11,14 @@ no manual steps.
 - `ffmpeg` — generates the video poster thumbnails shown in the background
   grid.
 - `jq` — detects that the video layer is rendering.
+- `socat` — talks to mpv's IPC socket so switching live wallpapers swaps
+  inside the running instance (no gap, no flicker).
 
-All three are installed automatically on first use (a terminal opens where you
+All four are installed automatically when missing (a terminal opens where you
 type your sudo password). You can also install them manually:
 
 ```bash
-yay -S mpvpaper ffmpeg jq
+yay -S mpvpaper ffmpeg jq socat
 ```
 
 ## Install
@@ -27,8 +29,8 @@ omarchy plugin add https://github.com/taxin-404/live-wallpaper.git --enable
 
 That's it. On first load the plugin registers itself automatically:
 
-- installs the system dependencies (mpvpaper, ffmpeg, jq) — a terminal opens
-  for your sudo password,
+- installs the system dependencies (mpvpaper, ffmpeg, jq, socat) — a terminal
+  opens for your sudo password,
 - adds the **Background** row override to the `Super+Ctrl+Space` menu, so the
   picker shows live wallpapers alongside static ones.
 

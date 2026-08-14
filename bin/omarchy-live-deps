@@ -2,12 +2,13 @@
 # omarchy-live-deps — ensure the plugin's system dependencies are installed.
 #
 # Requires: mpvpaper (AUR, the video renderer), ffmpeg (video poster
-# thumbnails), jq (layer detection). If any are missing, opens a floating
-# terminal that installs them so the user can type their sudo password, then
-# waits for the install to finish. Exits 0 once everything is present.
+# thumbnails), jq (layer detection), socat (mpv IPC to swap videos in place).
+# If any are missing, opens a floating terminal that installs them so the user
+# can type their sudo password, then waits for the install to finish. Exits 0
+# once everything is present.
 set -euo pipefail
 
-REQUIRED=(mpvpaper ffmpeg jq)
+REQUIRED=(mpvpaper ffmpeg jq socat)
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
 
 # Serialize concurrent callers (installer on load + set/restore) so a missing

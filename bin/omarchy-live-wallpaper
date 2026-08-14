@@ -11,6 +11,7 @@ set -euo pipefail
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIVE_LINK="$STATE_DIR/current"
+IPC_SOCKET="$STATE_DIR/mpv.sock"
 MPV_OPTS="no-audio --loop --hwdec=auto-copy"
 
 mkdir -p "$STATE_DIR"
@@ -71,6 +72,17 @@ kill_mpvpaper_pid() {
   kill -9 "$pid" 2>/dev/null || true
 }
 
+# Swap the video inside the running mpvpaper through its mpv IPC socket. The
+# layer surface keeps its last presented frame while the new video decodes,
+# so live->live switches are seamless: no new process, no gap, no flicker.
+ipc_loadfile() {
+  local video="$1" reply
+  [[ -S $IPC_SOCKET ]] || return 1
+  reply=$(printf '{"command":["loadfile",%s]}\n' "$(jq -nc --arg v "$video" '$v')" \
+    | socat - "UNIX-CONNECT:$IPC_SOCKET" 2>/dev/null) || return 1
+  [[ $reply == *'"error":"success"'* ]]
+}
+
 case "${1:-}" in
   set)
     video="${2:-}"
@@ -83,21 +95,29 @@ case "${1:-}" in
     "$BIN_DIR/omarchy-live-deps" || exit 1
     video=$(realpath "$video")
 
-    # Switching live -> live: start the new video BEFORE dropping the old
-    # one, and wait for the new layer to actually render. The theme wallpaper
-    # stays behind the video, so the old frame is replaced by the new one with
-    # no static/black flash in between.
+    # Switching live -> live: swap inside the running mpvpaper via its IPC
+    # socket. The surface keeps its last frame while the new video decodes,
+    # so the old video is simply replaced — no static, no gap, no flicker.
+    if ipc_loadfile "$video"; then
+      ln -nsf "$video" "$LIVE_LINK"
+      echo "live wallpaper: $video"
+      exit 0
+    fi
+
+    # Fresh start (first use, or the socket is stale). Start over any old
+    # socketless instance so the theme wallpaper never shows mid-swap.
     old_video=""
     if pgrep -x mpvpaper >/dev/null 2>&1; then
       old_video=$(readlink -f "$LIVE_LINK" 2>/dev/null || true)
     fi
 
+    rm -f "$IPC_SOCKET"
     ln -nsf "$video" "$LIVE_LINK"
 
     # Run on the bottom layer: above the theme wallpaper, below the bar and
     # windows. Theme changes only swap the static behind the video, so they
     # never disturb the live wallpaper.
-    nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS" '*' "$video" >/dev/null 2>&1 &
+    nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS --input-ipc-server=$IPC_SOCKET" '*' "$video" >/dev/null 2>&1 &
     new_pid=$!
 
     if ! wait_for_mpvpaper "$new_pid"; then
@@ -111,7 +131,7 @@ case "${1:-}" in
       exit 1
     fi
 
-    # New video is rendering; any previous instances are now redundant.
+    # Any previous instance is now redundant.
     old_pids=$(pgrep -x mpvpaper | grep -vx "$new_pid" || true)
     if [[ -n $old_pids ]]; then
       kill $old_pids 2>/dev/null || true
@@ -128,7 +148,7 @@ case "${1:-}" in
     ;;
   stop)
     kill_mpvpaper
-    rm -f "$LIVE_LINK"
+    rm -f "$LIVE_LINK" "$IPC_SOCKET"
     echo "live wallpaper stopped"
     ;;
   restore)
