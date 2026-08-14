@@ -44,7 +44,7 @@ kill_mpvpaper() {
 # When a pid is given, only that instance counts — so starting a new video
 # over an old one can wait for the new layer instead of the old one.
 wait_for_mpvpaper() {
-  local pid=${1:-0} timeout=${2:-8} grace=${3:-0.4}
+  local pid=${1:-0} timeout=${2:-8} grace=${3:-0.1}
   local end=$((SECONDS + timeout))
   while (( SECONDS < end )); do
     if hyprctl layers -j 2>/dev/null | jq -e --argjson p "$pid" \
