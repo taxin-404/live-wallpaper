@@ -83,6 +83,19 @@ ipc_loadfile() {
   [[ $reply == *'"error":"success"'* ]]
 }
 
+# Fade the new video in over the same 420ms as the static wallpaper reveal.
+# The filter is added before loadfile and removed right after, so the loop
+# never re-triggers it (mpv's lavfi fade keys off the video PTS).
+FADE_FILTER="lavfi=[fade=t=in:st=0:d=0.42]"
+
+ipc_vf() {
+  local action="$1" reply
+  [[ -S $IPC_SOCKET ]] || return 1
+  reply=$(printf '{"command":["change-list","vf","%s","%s"]}\n' "$action" "$FADE_FILTER" \
+    | socat - "UNIX-CONNECT:$IPC_SOCKET" 2>/dev/null) || return 1
+  [[ $reply == *'"error":"success"'* ]]
+}
+
 case "${1:-}" in
   set)
     video="${2:-}"
@@ -98,11 +111,15 @@ case "${1:-}" in
     # Switching live -> live: swap inside the running mpvpaper via its IPC
     # socket. The surface keeps its last frame while the new video decodes,
     # so the old video is simply replaced — no static, no gap, no flicker.
-    if ipc_loadfile "$video"; then
+    # The new video fades in (like the static wallpaper's reveal animation).
+    if ipc_vf add && ipc_loadfile "$video"; then
       ln -nsf "$video" "$LIVE_LINK"
       echo "live wallpaper: $video"
+      sleep 0.55
+      ipc_vf remove || true
       exit 0
     fi
+    ipc_vf remove || true
 
     # Fresh start (first use, or the socket is stale). Start over any old
     # socketless instance so the theme wallpaper never shows mid-swap.
