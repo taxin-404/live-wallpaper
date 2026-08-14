@@ -47,6 +47,18 @@ if (( ${#video_dirs[@]} > 0 )); then
       -print0 2>/dev/null | sort -z)
 fi
 
+# Prune stale posters: the grid shows every image in the poster dir, so any
+# leftover poster for a deleted video would appear as a "live" entry that
+# cannot play. Keep only posters mapped by the freshly built index.
+if [[ -d $POSTER_DIR ]]; then
+  shopt -s nullglob
+  for p in "$POSTER_DIR"/*.jpg; do
+    if ! grep -qF -- "$(basename "$p")" "$INDEX_FILE"; then
+      rm -f -- "$p"
+    fi
+  done
+fi
+
 # With no live wallpaper active, highlight the currently shown static image.
 # Only trust it if it really is an image (the live `current` symlink can point
 # at the poster/transparent cache too, and a stray symlink must not leak here).
