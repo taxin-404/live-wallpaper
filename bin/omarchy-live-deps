@@ -8,6 +8,13 @@
 set -euo pipefail
 
 REQUIRED=(mpvpaper ffmpeg jq)
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+
+# Serialize concurrent callers (installer on load + set/restore) so a missing
+# dependency only ever opens one install terminal; the others wait their turn.
+mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/.deps.lock"
+flock 9
 
 missing() {
   local c
