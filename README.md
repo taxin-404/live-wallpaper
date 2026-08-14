@@ -16,10 +16,6 @@ yay -S mpvpaper
 ## Install
 
 ```bash
-# via SSH
-omarchy plugin add git@github.com:taxin-404/live-wallpaper.git --enable
-
-# or via HTTPS
 omarchy plugin add https://github.com/taxin-404/live-wallpaper.git --enable
 ```
 
