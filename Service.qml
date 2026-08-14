@@ -8,24 +8,41 @@ Item {
 
   // Injected by omarchy-shell (the service loader).
   property var shell: null
+  property var manifest: null
+
+  // Absolute folder this plugin lives in (from the injected manifest).
+  readonly property string pluginDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) : ""
+
+  function runScript(command) {
+    if (installProc.running) return
+    installProc.command = ["bash", "-lc", command]
+    installProc.running = true
+  }
 
   function runLiveWallpaper(command) {
-    if (liveWallpaperProc.running) return
-    liveWallpaperProc.command = ["bash", "-lc", "omarchy-live-wallpaper " + command]
-    liveWallpaperProc.running = true
+    if (!root.pluginDir) return
+    runScript("\"" + root.pluginDir + "/bin/omarchy-live-wallpaper\" " + command)
   }
 
-  Process {
-    id: liveWallpaperProc
-  }
-
-  // Restore the active live wallpaper once the shell has settled after login.
-  // The static background layer loads first, so a short delay is required.
+  // First load: self-install the menu override + theme hook, then restore the
+  // active live wallpaper once the shell has settled.
   Timer {
-    interval: 1500
+    interval: 1200
+    repeat: false
+    running: true
+    onTriggered: root.runScript("\"" + root.pluginDir + "/bin/omarchy-live-install\"")
+  }
+
+  Timer {
+    interval: 2000
     repeat: false
     running: true
     onTriggered: root.runLiveWallpaper("restore")
+  }
+
+  Process {
+    id: installProc
   }
 
   IpcHandler {

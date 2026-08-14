@@ -44,8 +44,13 @@ if (( ${#video_dirs[@]} > 0 )); then
 fi
 
 # With no live wallpaper active, highlight the currently shown static image.
-if [[ -z $live_video && -z $selected && -n $current_background ]]; then
-  selected="$current_background"
+# Only trust it if it really is an image (the live `current` symlink can point
+# at the poster/transparent cache too, and a stray symlink must not leak here).
+if [[ -z $live_video && -z $selected && -n $current_background && -f $current_background ]]; then
+  ext="${current_background##*.}"
+  case "${ext,,}" in
+    jpg|jpeg|png|webp|gif|bmp) selected="$current_background" ;;
+  esac
 fi
 
 dirs=()

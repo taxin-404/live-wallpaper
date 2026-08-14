@@ -42,12 +42,35 @@ theme_default_bg() {
   return 0
 }
 
+# Is the path a real image file? Guards `capture_previous`/`restore_static`
+# against persisting a non-image as the wallpaper (e.g. a stray symlink that
+# points at an executable instead of a picture).
+is_image() {
+  local ext
+  [[ -n $1 && -f $1 ]] || return 1
+  ext="${1##*.}"
+  case "${ext,,}" in
+    jpg|jpeg|png|webp|gif|bmp) return 0 ;;
+  esac
+  return 1
+}
+
+is_video() {
+  local ext
+  [[ -n $1 && -f $1 ]] || return 1
+  ext="${1##*.}"
+  case "${ext,,}" in
+    mp4|mkv|webm|mov|avi|m4v|gif|apng) return 0 ;;
+  esac
+  return 1
+}
+
 # Remember the static background showing right now, unless we already have one.
 capture_previous() {
   [[ -f $PREVIOUS_FILE ]] && return 0
   local prev
   prev=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)
-  if [[ -n $prev && -f $prev && "$prev" != "$TRANSPARENT" ]]; then
+  if is_image "$prev" && [[ "$prev" != "$TRANSPARENT" ]]; then
     printf '%s\n' "$prev" > "$PREVIOUS_FILE"
   fi
 }
@@ -58,12 +81,12 @@ restore_static() {
   local prev=""
   [[ -f $PREVIOUS_FILE ]] && prev=$(cat "$PREVIOUS_FILE")
   rm -f "$LIVE_LINK" "$PREVIOUS_FILE"
-  if [[ -n $prev && -f $prev ]]; then
+  if is_image "$prev"; then
     omarchy-theme-bg-set "$prev"
   else
     local def
     def=$(theme_default_bg)
-    if [[ -n $def && -f $def ]]; then
+    if is_image "$def"; then
       omarchy-theme-bg-set "$def"
     fi
   fi
@@ -101,6 +124,11 @@ case "${1:-}" in
   set)
     video="${2:-}"
     [[ -n $video && -f $video ]] || { echo "not a file: ${video:-<none>}" >&2; exit 1; }
+    is_video "$video" || { echo "not a video file: $video" >&2; exit 1; }
+    command -v mpvpaper >/dev/null 2>&1 || {
+      echo "mpvpaper is not installed. Install it first: yay -S mpvpaper" >&2
+      exit 1
+    }
     video=$(realpath "$video")
 
     # Switching live -> live: bring the static back first, so there is never a
@@ -123,8 +151,10 @@ case "${1:-}" in
     if ! wait_for_mpvpaper; then
       kill_mpvpaper
       rm -f "$LIVE_LINK"
-      if [[ -f $PREVIOUS_FILE ]]; then
-        omarchy-theme-bg-set "$(cat "$PREVIOUS_FILE")"
+      local prev
+      [[ -f $PREVIOUS_FILE ]] && prev=$(cat "$PREVIOUS_FILE")
+      if is_image "$prev"; then
+        omarchy-theme-bg-set "$prev"
       fi
       rm -f "$PREVIOUS_FILE"
       echo "live wallpaper failed to start: $video" >&2

@@ -6,6 +6,9 @@ set -euo pipefail
 path="${1:-}"
 [[ -n $path ]] || { echo "usage: omarchy-bg-set <selected-path>" >&2; exit 1; }
 
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIVE_CLI="$BIN_DIR/omarchy-live-wallpaper"
+
 POSTER_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/live-posters"
 INDEX_FILE="$POSTER_DIR/index"
 video=""
@@ -15,8 +18,12 @@ if [[ -f $INDEX_FILE ]]; then
 fi
 
 if [[ -n $video && -f $video ]]; then
-  omarchy-live-wallpaper set "$video"
+  "$LIVE_CLI" set "$video"
 else
-  omarchy-live-wallpaper stop
-  omarchy-theme-bg-set "$path"
+  "$LIVE_CLI" stop
+  ext="${path##*.}"
+  case "${ext,,}" in
+    jpg|jpeg|png|webp|gif|bmp) omarchy-theme-bg-set "$path" ;;
+    *) echo "not an image: $path" >&2; exit 1 ;;
+  esac
 fi

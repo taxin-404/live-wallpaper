@@ -1,16 +1,37 @@
 # taxin.live-wallpaper
 
-mpvpaper live video wallpapers integrated into Omarchy's background switcher.
+mpvpaper live video wallpapers integrated into Omarchy's background switcher
+(`Super+Ctrl+Space`), as a proper Omarchy plugin. Install it with one command,
+no manual steps.
+
+## Requirements
+
+- [mpvpaper](https://aur.archlinux.org/packages/mpvpaper) (AUR) — install it
+  first:
+
+```bash
+yay -S mpvpaper
+```
 
 ## Install
 
 ```bash
-~/.config/omarchy/plugins/taxin.live-wallpaper/install.sh
+# via SSH
+omarchy plugin add git@github.com:taxin-404/live-wallpaper.git --enable
+
+# or via HTTPS
+omarchy plugin add https://github.com/taxin-404/live-wallpaper.git --enable
 ```
 
-This installs `mpvpaper` (AUR) if missing, symlinks the CLI tools into
-`~/.local/bin`, installs a `theme-set` hook, and overrides the `style.background`
-menu row so the background switcher shows live wallpapers alongside static ones.
+That's it. On first load the plugin registers itself automatically:
+
+- adds the **Background** row override to the `Super+Ctrl+Space` menu so the
+  picker shows live wallpapers alongside static ones,
+- installs a theme-set hook that restores the active wallpaper after theme
+  changes.
+
+Everything lives in user space (`~/.config`, `~/.local`, `~/.cache`) — nothing
+under `/usr/share/omarchy/` is touched, so `omarchy update` never resets it.
 
 ## Add videos
 
@@ -37,25 +58,20 @@ omarchy-live-wallpaper stop                     # stop (restores static)
 omarchy-live-wallpaper status                   # current live video or "none"
 ```
 
-The video plays looped and muted via `mpvpaper` (`no-audio --loop
---hwdec=auto-copy --auto-pause`). The shell's static background layer is set to
-a transparent image while a video is active so it can't cover the playback.
-
-Switching is seamless: the video is started and its layer is confirmed
-rendering *before* the static background is cleared, so there is never a black
-frame. Switching between two videos briefly restores the static wallpaper
-first. `--auto-pause` lets mpvpaper pause the video whenever it is covered by a
-fullscreen or maximized window to save GPU/CPU.
+The video plays looped, muted, and auto-paused when covered (`no-audio --loop
+--hwdec=auto-copy --auto-pause`). Switching is seamless — the video layer is
+confirmed rendering before the static background is cleared, so there is never
+a black frame.
 
 ## Uninstall
 
 ```bash
-~/.config/omarchy/plugins/taxin.live-wallpaper/uninstall.sh
-rm -rf ~/.config/omarchy/plugins/taxin.live-wallpaper
+omarchy plugin remove taxin.live-wallpaper
 ```
 
-## Notes
+The menu row auto-hides and the theme hook removes itself once the plugin
+folder is gone. For a spotless wipe (state, cache, generated config):
 
-- Only user-space paths are used (`~/.config`, `~/.local`, `~/.cache`); nothing
-  under `/usr/share/omarchy/` is modified, so `omarchy update` never resets it.
-- Desktop double-click still opens the stock static-only switcher.
+```bash
+~/.config/omarchy/plugins/taxin.live-wallpaper/bin/omarchy-live-uninstall
+```
