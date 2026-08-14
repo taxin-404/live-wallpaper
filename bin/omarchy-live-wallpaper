@@ -9,6 +9,7 @@
 set -euo pipefail
 
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIVE_LINK="$STATE_DIR/current"
 MPV_OPTS="no-audio --loop --hwdec=auto-copy"
 
@@ -62,24 +63,10 @@ case "${1:-}" in
     [[ -n $video && -f $video ]] || { echo "not a file: ${video:-<none>}" >&2; exit 1; }
     is_video "$video" || { echo "not a video file: $video" >&2; exit 1; }
 
-    # mpvpaper (AUR) is required. If it is missing, open a floating terminal
-    # that runs the install so the user can type their sudo password, then
-    # wait for it to finish before starting the video.
-    if ! command -v mpvpaper >/dev/null 2>&1; then
-      echo "mpvpaper is not installed — launching the installer..." >&2
-      if command -v omarchy-launch-floating-terminal-with-presentation >/dev/null 2>&1; then
-        omarchy-launch-floating-terminal-with-presentation 'yay -S --noconfirm mpvpaper' \
-          >/dev/null 2>&1 || true
-        for _ in {1..600}; do
-          command -v mpvpaper >/dev/null 2>&1 && break
-          sleep 1
-        done
-      fi
-      if ! command -v mpvpaper >/dev/null 2>&1; then
-        echo "mpvpaper is still not installed. Run: yay -S mpvpaper" >&2
-        exit 1
-      fi
-    fi
+    # mpvpaper (AUR) + ffmpeg + jq are required. If any are missing this opens
+    # a floating terminal that installs them (user types their sudo password)
+    # and waits for it to finish before starting the video.
+    "$BIN_DIR/omarchy-live-deps" || exit 1
     video=$(realpath "$video")
 
     # Switching live -> live: just swap the process. The theme wallpaper

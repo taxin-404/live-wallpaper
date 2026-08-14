@@ -6,13 +6,17 @@ no manual steps.
 
 ## Requirements
 
-- [mpvpaper](https://aur.archlinux.org/packages/mpvpaper) (AUR). If it is
-  missing when you first set a live wallpaper, the plugin opens a terminal and
-  runs the install for you (type your sudo password there). You can also
-  install it manually:
+- [mpvpaper](https://aur.archlinux.org/packages/mpvpaper) (AUR) — the video
+  renderer.
+- `ffmpeg` — generates the video poster thumbnails shown in the background
+  grid.
+- `jq` — detects that the video layer is rendering.
+
+If any are missing on first use, the plugin opens a terminal and installs them
+for you (type your sudo password there). You can also install manually:
 
 ```bash
-yay -S mpvpaper
+yay -S mpvpaper ffmpeg jq
 ```
 
 ## Install

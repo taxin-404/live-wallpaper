@@ -7,6 +7,11 @@
 # Super+Ctrl+Space grid. Prints the picked path (an image, or a live poster).
 set -euo pipefail
 
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Poster thumbnails need ffmpeg; ensure the real deps before scanning videos.
+"$BIN_DIR/omarchy-live-deps" || exit 1
+
 theme_name=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
 current_background=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)
 STATE_BG="$HOME/.local/state/omarchy/current/theme/backgrounds"
