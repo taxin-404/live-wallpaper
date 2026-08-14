@@ -5,6 +5,7 @@
 #
 #   - adds the `style.background` menu override (absolute paths + a `when:`
 #     guard so the row auto-hides once this plugin is removed)
+#   - ensures the system dependencies (mpvpaper, ffmpeg, jq) on first install
 #   - removes any leftover theme-set hook from older installs (theme changes
 #     no longer need one: the video runs above the theme wallpaper)
 #
@@ -68,6 +69,15 @@ if [[ -f $HOOK_PATH ]]; then
   rm -f -- "$HOOK_PATH"
 fi
 
+# ------------------------------------------ first-install dependencies
+
+# The single `omarchy plugin add ... --enable` line installs the system
+# dependencies too (mpvpaper, ffmpeg, jq). Gated by the flag so it only runs
+# on first install and never nags on later boots; `set` re-checks anyway as a
+# safety net. A cancelled install is not fatal — the menu row is already in
+# place and the flag is written regardless.
+"$PLUGIN_DIR/bin/omarchy-live-deps" >/dev/null 2>&1 || true
+
 printf '%s\n' "$INSTALLED_V2" > "$INSTALLED_FILE"
 
-echo "taxin.live-wallpaper: integration installed (menu row; theme hook retired)"
+echo "taxin.live-wallpaper: integration installed (menu row; dependencies ensured)"

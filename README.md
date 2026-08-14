@@ -12,8 +12,8 @@ no manual steps.
   grid.
 - `jq` — detects that the video layer is rendering.
 
-If any are missing on first use, the plugin opens a terminal and installs them
-for you (type your sudo password there). You can also install manually:
+All three are installed automatically on first use (a terminal opens where you
+type your sudo password). You can also install them manually:
 
 ```bash
 yay -S mpvpaper ffmpeg jq
@@ -25,9 +25,12 @@ yay -S mpvpaper ffmpeg jq
 omarchy plugin add https://github.com/taxin-404/live-wallpaper.git --enable
 ```
 
-That's it. On first load the plugin registers itself automatically by adding
-the **Background** row override to the `Super+Ctrl+Space` menu, so the picker
-shows live wallpapers alongside static ones.
+That's it. On first load the plugin registers itself automatically:
+
+- installs the system dependencies (mpvpaper, ffmpeg, jq) — a terminal opens
+  for your sudo password,
+- adds the **Background** row override to the `Super+Ctrl+Space` menu, so the
+  picker shows live wallpapers alongside static ones.
 
 Everything lives in user space (`~/.config`, `~/.local`, `~/.cache`) — nothing
 under `/usr/share/omarchy/` is touched, so `omarchy update` never resets it.
