@@ -10,7 +10,21 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Poster thumbnails need ffmpeg; ensure the real deps before scanning videos.
-"$BIN_DIR/omarchy-live-deps" || exit 1
+# Skip the subprocess while the deps marker is fresh (written by deps after a
+# successful check) so the picker opens without spawning a second process.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+DEPS_OK="$STATE_DIR/.deps-ok"
+deps_fresh() {
+  local boot now
+  [[ -f $DEPS_OK ]] || return 1
+  boot=$(head -n1 "$DEPS_OK" 2>/dev/null || true)
+  [[ -n $boot && $boot == "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)" ]] || return 1
+  now=$(date +%s)
+  (( now - $(stat -c %Y "$DEPS_OK" 2>/dev/null || echo 0) < 300 ))
+}
+if ! deps_fresh; then
+  "$BIN_DIR/omarchy-live-deps" || exit 1
+fi
 
 theme_name=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
 current_background=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)
@@ -41,15 +55,29 @@ if (( ${#video_dirs[@]} > 0 )); then
   while IFS= read -r -d '' v; do
     poster="$POSTER_DIR/$(printf '%s' "$v" | md5sum | cut -d ' ' -f 1).jpg"
     printf '%s\t%s\n' "$poster" "$v" >> "$INDEX_FILE"
-    if [[ ! -f $poster ]]; then
-      ffmpeg -hide_banner -loglevel error -ss 0.5 -i "$v" -frames:v 1 -q:v 3 -y "$poster" >/dev/null 2>&1 || true
-    fi
     if [[ -n $live_video && "$live_video" == "$(realpath "$v")" ]]; then
       selected="$poster"
     fi
   done < <(find "${video_dirs[@]}" -maxdepth 1 -type f \
       \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' -o -iname '*.avi' \) \
       -print0 2>/dev/null | sort -z)
+fi
+
+# Generate any missing posters in parallel (only missing, so a cached grid
+# stays instant; a large video set renders its thumbnails in one burst).
+gen_poster() {
+  local v="$1" p
+  p="$POSTER_DIR/$(printf '%s' "$v" | md5sum | cut -d ' ' -f 1).jpg"
+  [[ -f $p ]] && return 0
+  ffmpeg -hide_banner -loglevel error -ss 0.5 -i "$v" -frames:v 1 -q:v 3 -y "$p" >/dev/null 2>&1 || true
+}
+export -f gen_poster
+export POSTER_DIR
+if (( ${#video_dirs[@]} > 0 )); then
+  find "${video_dirs[@]}" -maxdepth 1 -type f \
+      \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' -o -iname '*.avi' \) \
+      -print0 2>/dev/null | sort -z \
+      | xargs -0 -P"$(nproc 2>/dev/null || echo 2)" -n1 bash -c 'gen_poster "$1"' _
 fi
 
 # Prune stale posters: the grid shows every image in the poster dir, so any

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# omarchy-live-optimize — re-encode a wallpaper video for low CPU/GPU use.
+#
+# Wallpapers render full-time, so a heavy source (1080p30, high bitrate) costs
+# real CPU on weaker machines. This writes a leaner copy (h264, yuv420p, no
+# audio, faststart) that decodes and renders for a fraction of the work.
+# Non-destructive: the original is never touched.
+#
+# Usage:
+#   omarchy-live-optimize <video> [--fps 24] [--crf 28] [--scale 1280]
+#
+# Defaults: fps 24, crf 28, scale off. Output: <name>.live.mp4 next to the
+# original. Rename it over the original if you like the result:
+#   mv <name>.live.mp4 <name>.mp4
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Thumbnail-free encode still needs ffmpeg; keep the deps contract.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+DEPS_OK="$STATE_DIR/.deps-ok"
+deps_fresh() {
+  local boot now
+  [[ -f $DEPS_OK ]] || return 1
+  boot=$(head -n1 "$DEPS_OK" 2>/dev/null || true)
+  [[ -n $boot && $boot == "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)" ]] || return 1
+  now=$(date +%s)
+  (( now - $(stat -c %Y "$DEPS_OK" 2>/dev/null || echo 0) < 300 ))
+}
+if ! deps_fresh; then
+  "$BIN_DIR/omarchy-live-deps" || exit 1
+fi
+
+video=""
+fps=24
+crf=28
+scale=""
+
+while (($# > 0)); do
+  case "$1" in
+    --fps) fps="${2:?--fps needs a value}"; shift 2 ;;
+    --crf) crf="${2:?--crf needs a value}"; shift 2 ;;
+    --scale) scale="${2:?--scale needs a value}"; shift 2 ;;
+    --) shift; video="${1:-}"; break ;;
+    -*) echo "unknown option: $1" >&2; exit 1 ;;
+    *) video="$1"; shift ;;
+  esac
+done
+
+[[ -n $video ]] || { echo "usage: omarchy-live-optimize <video> [--fps 24] [--crf 28] [--scale 1280]" >&2; exit 1; }
+[[ -f $video ]] || { echo "not a file: $video" >&2; exit 1; }
+
+src=$(realpath "$video")
+dir=$(dirname "$src")
+base=$(basename "$src")
+name="${base%.*}"
+out="$dir/$name.live.mp4"
+
+filters=()
+[[ -n $scale ]] && filters+=("scale=$scale:-2")
+[[ ${#filters[@]} -gt 0 ]] && vf="-vf $(IFS=,; echo "${filters[*]}")" || vf=""
+
+# faststart so the loop restarts instantly from disk, -tune stillimage keeps
+# the x264 encode cheap and stable for long-loop material.
+ffmpeg -hide_banner -loglevel error -i "$src" -map 0:v:0 -c:v libx264 \
+  -preset veryfast -tune stillimage -crf "$crf" -pix_fmt yuv420p \
+  -r "$fps" -an -movflags +faststart $vf -y "$out"
+
+# Prefer hardware-accelerated decoding of the result too.
+echo "$out"
+echo "optimized from $src"
+echo "rename over the original when happy: mv \"$out\" \"$src\""

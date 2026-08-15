@@ -12,8 +12,12 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIVE_LINK="$STATE_DIR/current"
 IPC_SOCKET="$STATE_DIR/mpv.sock"
-MPV_OPTS="no-audio --loop --hwdec=auto-copy"
+HWDEC="${OMARCHY_LIVE_HWDEC:-auto-copy}"
+MPV_OPTS="no-audio --loop --hwdec=$HWDEC --framedrop=vo --video-sync=display"
+AUTO_MODE="${OMARCHY_LIVE_AUTO_MODE:-FULL}"
 LOCK_DIR="$STATE_DIR/.set-lock"
+DEPS_OK="$STATE_DIR/.deps-ok"
+DEPS_OK_MAX_AGE=300
 
 mkdir -p "$STATE_DIR"
 
@@ -55,6 +59,18 @@ is_video() {
     mp4|mkv|webm|mov|avi|m4v|gif|apng) return 0 ;;
   esac
   return 1
+}
+
+# True when the dependency check passed recently (same boot, under
+# DEPS_OK_MAX_AGE). Lets set/restore skip the deps subprocess entirely; a stale
+# or missing marker falls through to the real check.
+deps_fresh() {
+  local boot now
+  [[ -f $DEPS_OK ]] || return 1
+  boot=$(head -n1 "$DEPS_OK" 2>/dev/null || true)
+  [[ -n $boot && $boot == "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)" ]] || return 1
+  now=$(date +%s)
+  (( now - $(stat -c %Y "$DEPS_OK" 2>/dev/null || echo 0) < DEPS_OK_MAX_AGE ))
 }
 
 # mpvpaper can ignore SIGTERM when its video failed to open (its cleanup
@@ -124,7 +140,11 @@ case "${1:-}" in
     # mpvpaper (AUR) + ffmpeg + jq are required. If any are missing this opens
     # a floating terminal that installs them (user types their sudo password)
     # and waits for it to finish before starting the video.
-    "$BIN_DIR/omarchy-live-deps" || exit 1
+    if ! deps_fresh; then
+      "$BIN_DIR/omarchy-live-deps" || exit 1
+    elif [[ ${OMARCHY_LIVE_DEBUG:-} == 1 ]]; then
+      echo "live wallpaper: deps ok (cached)" >&2
+    fi
     video=$(realpath "$video")
 
     # Switching live -> live: swap inside the running mpvpaper via its IPC
@@ -158,7 +178,14 @@ case "${1:-}" in
     else
       ipc_opt=" --input-ipc-server=$IPC_SOCKET"
     fi
-    nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS$ipc_opt" '*' "$video" >/dev/null 2>&1 &
+    mpvpaper_args=(--auto-pause)
+    case "${AUTO_MODE}" in
+      FULL|MAX) mpvpaper_args+=(--auto-mode "$AUTO_MODE") ;;
+      none) ;;
+      *) echo "live wallpaper: ignoring OMARCHY_LIVE_AUTO_MODE=${AUTO_MODE:-<empty>}" >&2 ;;
+    esac
+    mpvpaper_args+=(-l bottom -o "$MPV_OPTS$ipc_opt" '*' "$video")
+    nohup mpvpaper "${mpvpaper_args[@]}" >/dev/null 2>&1 &
     new_pid=$!
 
     if ! wait_for_mpvpaper "$new_pid"; then

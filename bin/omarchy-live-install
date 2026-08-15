@@ -18,66 +18,80 @@ INSTALLED_FILE="$STATE_DIR/installed"
 MENU_EXT="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
 HOOK_PATH="$HOME/.config/omarchy/hooks/theme-set.d/10-live-wallpaper.sh"
 
-# ------------------------------------------------- system dependencies
-
-# Ensure mpvpaper (AUR), ffmpeg, jq and socat on every load. This is cheap when
-# they are present; it only opens an install terminal when something is actually
-# missing — so a single `omarchy plugin add ... --enable` (or any shell load
-# with a missing dep) self-heals. `set` re-checks too.
-"$PLUGIN_DIR/bin/omarchy-live-deps" || true
-
-# ------------------------------ wallpaper double-click entry shims
+# ------------------------- already installed: heal shims, then go away
 #
-# The desktop double-click (shell plugin background/Background.qml) calls the
-# stock `omarchy-theme-bg-switcher` / `omarchy-theme-bg-set` by bare name from
-# a `bash -c`. Shadow those two commands with user-space wrappers that delegate
-# to the live-capable picker and setter, so every wallpaper entry point
-# (menu, launcher, double-click) can select live wallpapers. A ~/.config/uwsm
-# env.d drop-in puts the shim directory first in the session PATH; it only
-# takes effect after the next session start. Recreated on every load so a
-# deleted shim or drop-in self-heals.
+# Everything below this early-exit only runs on the first load or after the
+# plugin moves. Every later shell start is cheap: no dependency subprocess, no
+# menu rewrite. The shims are the one piece that can vanish independently
+# (user cleanup), so they are recreated idempotently — nothing is written when
+# they are already present.
+INSTALLED_V2="${PLUGIN_DIR}"$'\n'"v2"
 SHIM_DIR="$HOME/.local/bin/omarchy-live-shims"
-mkdir -p "$SHIM_DIR"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  '# user-space shim -> live-capable picker (managed by taxin.live-wallpaper)' \
-  "script=\"$PLUGIN_DIR/bin/omarchy-bg-switcher\"" \
-  'if [[ -x $script ]]; then' \
-  '  exec "$script" "$@"' \
-  'fi' \
-  '# Plugin folder gone (partial uninstall): fall back to the stock picker.' \
-  'exec /usr/bin/omarchy-theme-bg-switcher "$@"' \
-  > "$SHIM_DIR/omarchy-theme-bg-switcher"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  '# user-space shim -> live/static setter (managed by taxin.live-wallpaper)' \
-  "script=\"$PLUGIN_DIR/bin/omarchy-bg-set\"" \
-  'if [[ -x $script ]]; then' \
-  '  exec "$script" "$@"' \
-  'fi' \
-  '# Plugin folder gone (partial uninstall): fall back to the stock setter.' \
-  'exec /usr/bin/omarchy-theme-bg-set "$@"' \
-  > "$SHIM_DIR/omarchy-theme-bg-set"
-chmod +x "$SHIM_DIR/omarchy-theme-bg-switcher" "$SHIM_DIR/omarchy-theme-bg-set"
-
 ENV_DIR="$HOME/.config/uwsm/env.d"
 ENV_FILE="$ENV_DIR/99-live-wallpaper"
-mkdir -p "$ENV_DIR"
-printf '%s\n' \
-  '# taxin.live-wallpaper: put the live wallpaper shims first so the desktop' \
-  '# double-click uses the live-capable background picker. Removed on uninstall.' \
-  'case ":$PATH:" in' \
-  '  *":$HOME/.local/bin/omarchy-live-shims:"*) ;;' \
-  '  *) PATH="$HOME/.local/bin/omarchy-live-shims${PATH:+:$PATH}" ;;' \
-  'esac' \
-  > "$ENV_FILE"
 
-# Already installed for this exact plugin location and generation.
-INSTALLED_V2="${PLUGIN_DIR}"$'\n'"v2"
+# Wallpaper double-click entry shims. The desktop double-click (shell plugin
+# background/Background.qml) calls the stock `omarchy-theme-bg-switcher` /
+# `omarchy-theme-bg-set` by bare name from a `bash -c`. Shadow those two
+# commands with user-space wrappers that delegate to the live-capable picker
+# and setter, so every wallpaper entry point (menu, launcher, double-click)
+# can select live wallpapers. The env.d drop-in puts the shim directory first
+# in the session PATH; it only takes effect after the next session start.
+ensure_shims() {
+  mkdir -p "$SHIM_DIR"
+  if [[ ! -x $SHIM_DIR/omarchy-theme-bg-switcher ]]; then
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      '# user-space shim -> live-capable picker (managed by taxin.live-wallpaper)' \
+      "script=\"$PLUGIN_DIR/bin/omarchy-bg-switcher\"" \
+      'if [[ -x $script ]]; then' \
+      '  exec "$script" "$@"' \
+      'fi' \
+      '# Plugin folder gone (partial uninstall): fall back to the stock picker.' \
+      'exec /usr/bin/omarchy-theme-bg-switcher "$@"' \
+      > "$SHIM_DIR/omarchy-theme-bg-switcher"
+  fi
+  if [[ ! -x $SHIM_DIR/omarchy-theme-bg-set ]]; then
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      '# user-space shim -> live/static setter (managed by taxin.live-wallpaper)' \
+      "script=\"$PLUGIN_DIR/bin/omarchy-bg-set\"" \
+      'if [[ -x $script ]]; then' \
+      '  exec "$script" "$@"' \
+      'fi' \
+      '# Plugin folder gone (partial uninstall): fall back to the stock setter.' \
+      'exec /usr/bin/omarchy-theme-bg-set "$@"' \
+      > "$SHIM_DIR/omarchy-theme-bg-set"
+  fi
+  chmod +x "$SHIM_DIR/omarchy-theme-bg-switcher" "$SHIM_DIR/omarchy-theme-bg-set"
+
+  mkdir -p "$ENV_DIR"
+  if [[ ! -f $ENV_FILE ]]; then
+    printf '%s\n' \
+      '# taxin.live-wallpaper: put the live wallpaper shims first so the desktop' \
+      '# double-click uses the live-capable background picker. Removed on uninstall.' \
+      'case ":$PATH:" in' \
+      '  *":$HOME/.local/bin/omarchy-live-shims:"*) ;;' \
+      '  *) PATH="$HOME/.local/bin/omarchy-live-shims${PATH:+:$PATH}" ;;' \
+      'esac' \
+      > "$ENV_FILE"
+  fi
+}
+
 if [[ -f $INSTALLED_FILE ]] && [[ "$(cat "$INSTALLED_FILE" 2>/dev/null || true)" == "$INSTALLED_V2" ]]; then
+  ensure_shims
   exit 0
 fi
 
+# ------------------------------ system dependencies (first install only)
+#
+# Ensure mpvpaper (AUR), ffmpeg, jq and socat. Cheap when present; opens an
+# install terminal only when something is actually missing. `set` and the
+# picker re-check at point of use (with a short freshness cache), so later
+# shell loads don't spawn this at all.
+"$PLUGIN_DIR/bin/omarchy-live-deps" || true
+
+ensure_shims
 mkdir -p "$STATE_DIR"
 
 # ------------------------------------------------------------------ menu row

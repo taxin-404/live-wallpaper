@@ -10,6 +10,18 @@ set -euo pipefail
 
 REQUIRED=(mpvpaper ffmpeg jq socat)
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/live-wallpaper"
+DEPS_OK="$STATE_DIR/.deps-ok"
+
+# Record that the deps are present right now (boot id + file mtime). Callers
+# skip this whole subprocess while the marker is fresh, so a healthy system
+# never pays for it again on later sets.
+mark_ok() {
+  mkdir -p "$STATE_DIR"
+  cat /proc/sys/kernel/random/boot_id > "$DEPS_OK" 2>/dev/null || true
+}
+clear_ok() {
+  rm -f "$DEPS_OK"
+}
 
 # Serialize concurrent callers (installer on load + set/restore) so a missing
 # dependency only ever opens one install terminal; the others wait their turn.
@@ -30,9 +42,11 @@ while IFS= read -r c; do
 done < <(missing)
 
 if (( ${#need[@]} == 0 )); then
+  mark_ok
   exit 0
 fi
 
+clear_ok
 echo "live wallpaper needs missing packages: ${need[*]}" >&2
 if ! command -v omarchy-launch-floating-terminal-with-presentation >/dev/null 2>&1; then
   echo "Run: yay -S ${need[*]}" >&2
@@ -42,7 +56,7 @@ fi
 omarchy-launch-floating-terminal-with-presentation "yay -S --noconfirm ${need[*]}" >/dev/null 2>&1 || true
 
 for _ in {1..600}; do
-  (( $(missing | wc -l) == 0 )) && exit 0
+  (( $(missing | wc -l) == 0 )) && { mark_ok; exit 0; }
   sleep 1
 done
 

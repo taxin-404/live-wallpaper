@@ -74,9 +74,44 @@ omarchy-live-wallpaper stop                     # stop (static shows)
 omarchy-live-wallpaper status                   # current live video or "none"
 ```
 
-The video plays looped, muted, and auto-paused when covered (`no-audio --loop
---hwdec=auto-copy --auto-pause`). Switching is seamless — the theme wallpaper
-stays behind the video, so there is never a black frame.
+The video plays looped, muted, and auto-paused when covered or when any window
+is fullscreen (`no-audio --loop --hwdec=auto-copy --framedrop=vo
+--video-sync=display --auto-pause --auto-mode FULL`). `framedrop=vo` lets mpv
+drop frames instead of stalling the compositor on slow CPUs; `video-sync=display`
+presents each frame at its native rate and trims the render loop's CPU.
+Switching is seamless — the theme wallpaper stays behind the video, so there is
+never a black frame.
+
+### Tuning (resource use)
+
+The renderer's CPU cost is mostly its per-frame render loop (largely independent
+of video resolution), so the levers below matter more than file size on their
+own:
+
+- `OMARCHY_LIVE_AUTO_MODE` — pauses the video when a window covers the desktop,
+  freeing the GPU/decoder. `FULL` (default) pauses under any fullscreen window,
+  `MAX` also pauses when a window is maximized, `none` never pauses.
+- `OMARCHY_LIVE_HWDEC` — mpv hardware decoding mode, default `auto-copy`
+  (GPU decode, best compatibility). Set `none` if your GPU driver has no
+  working VAAPI, or force a specific mode (e.g. `vaapi`, `nvdec`) if needed.
+
+Set them before the shell starts (e.g. in `~/.config/uwsm/env.d/`) so mpvpaper
+inherits them.
+
+For weak hardware, re-encode heavy videos: a smaller/lower-fps file shrinks the
+GPU, decode, and disk/IO cost (and matters more on compositors that scale render
+work with resolution). Non-destructive — it writes a leaner copy beside the
+original:
+
+```bash
+~/.config/omarchy/plugins/taxin.live-wallpaper/bin/omarchy-live-optimize ~/Videos/my.mp4
+# options: --fps 24 (default) --crf 28 (default) --scale 1280
+# result: ~/Videos/my.live.mp4  →  mv my.live.mp4 my.mp4
+```
+
+The plugin also skips re-checking its dependencies for a few minutes after a
+successful check (a boot-stamped cache marker), so opening the picker or
+switching wallpapers spawns no extra process on a healthy system.
 
 ## Uninstall
 
