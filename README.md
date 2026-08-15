@@ -32,7 +32,9 @@ That's it. On first load the plugin registers itself automatically:
 - installs the system dependencies (mpvpaper, ffmpeg, jq, socat) — a terminal
   opens for your sudo password,
 - adds the **Background** row override to the `Super+Ctrl+Space` menu, so the
-  picker shows live wallpapers alongside static ones.
+  picker shows live wallpapers alongside static ones,
+- installs user-space shims so the wallpaper **double-click** also opens the
+  live-capable picker (see below).
 
 Everything lives in user space (`~/.config`, `~/.local`, `~/.cache`) — nothing
 under `/usr/share/omarchy/` is touched, so `omarchy update` never resets it.
@@ -53,6 +55,13 @@ cp ~/Videos/my-wallpaper.mp4 ~/.config/omarchy/backgrounds/live/
 - Press **Super+Ctrl+Space** to open the background switcher. Videos appear in
   the grid with a frame thumbnail. Pick one to play it, or pick an image to
   restore a static background.
+- **Double-clicking the desktop** opens the same live-capable picker. The shell
+  background plugin calls the stock `omarchy-theme-bg-switcher` /
+  `omarchy-theme-bg-set` by bare name, so the plugin shadows those two commands
+  with wrappers in `~/.local/bin/omarchy-live-shims/` and prepends that
+  directory to the session `PATH` via `~/.config/uwsm/env.d/99-live-wallpaper`.
+  The new `PATH` only takes effect on your next login. Everything is removed on
+  uninstall.
 - The active live wallpaper is restored automatically after login.
 - Changing the theme never interrupts the live wallpaper: the video runs on
   the `bottom` layer above the theme wallpaper (below the bar and windows), so

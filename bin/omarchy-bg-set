@@ -20,10 +20,16 @@ fi
 if [[ -n $video && -f $video ]]; then
   "$LIVE_CLI" set "$video"
 else
-  "$LIVE_CLI" stop
+  # Set the static background first, while the video still covers it, then
+  # stop the renderer: if the set fails the live wallpaper keeps playing, and
+  # the reveal happens underneath it so there is never a bare gap.
   ext="${path##*.}"
   case "${ext,,}" in
-    jpg|jpeg|png|webp|gif|bmp) omarchy-theme-bg-set "$path" ;;
+    # Absolute path to the real built-in: the omarchy-theme-bg-set name is
+    # shadowed by a user-space shim (installed for the wallpaper double-click),
+    # and this static branch must not loop back into it.
+    jpg|jpeg|png|webp|gif|bmp)
+      /usr/bin/omarchy-theme-bg-set "$path" && "$LIVE_CLI" stop ;;
     *) echo "not an image: $path" >&2; exit 1 ;;
   esac
 fi

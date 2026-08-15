@@ -13,8 +13,35 @@ BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIVE_LINK="$STATE_DIR/current"
 IPC_SOCKET="$STATE_DIR/mpv.sock"
 MPV_OPTS="no-audio --loop --hwdec=auto-copy"
+LOCK_DIR="$STATE_DIR/.set-lock"
 
 mkdir -p "$STATE_DIR"
+
+# Serialize set/stop. An mkdir-based lock is atomic and carries no file
+# descriptor, so the nohup'd mpvpaper child can never keep holding it after a
+# command exits (a flock fd inherited across fork would do exactly that). A
+# set that dies hard (SIGKILL) leaves the directory; a stale guard reclaims it.
+# Uses the global LOCK_DIR directly: the EXIT trap runs after any `local` here
+# has gone out of scope, and an unset reference would abort under `set -u`.
+lock_acquire() {
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    if [[ -d $LOCK_DIR ]] \
+        && (( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) > 120 )); then
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+      continue
+    fi
+    sleep 0.05
+  done
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+}
+
+# Send one JSON IPC command to the running mpv and print its reply. -T 2 bounds
+# the whole exchange so a stuck mpv or a lingering open connection can never
+# block a `set` indefinitely (mpv normally closes the socket after the reply).
+mpv_cmd() {
+  [[ -S $IPC_SOCKET ]] || return 1
+  printf '%s\n' "$1" | socat -T 2 - "UNIX-CONNECT:$IPC_SOCKET" 2>/dev/null || return 1
+}
 
 is_active() {
   [[ -L $LIVE_LINK && -f "$(readlink -f "$LIVE_LINK" 2>/dev/null)" ]]
@@ -43,9 +70,11 @@ kill_mpvpaper() {
 
 # Wait until mpvpaper's layer has committed with real content on screen.
 # When a pid is given, only that instance counts — so starting a new video
-# over an old one can wait for the new layer instead of the old one.
+# over an old one can wait for the new layer instead of the old one. The
+# generous default gives a slow first decode (large file, cold disk) room
+# before a false "failed to start".
 wait_for_mpvpaper() {
-  local pid=${1:-0} timeout=${2:-8} grace=${3:-0.1}
+  local pid=${1:-0} timeout=${2:-15} grace=${3:-0.1}
   local end=$((SECONDS + timeout))
   while (( SECONDS < end )); do
     if hyprctl layers -j 2>/dev/null | jq -e --argjson p "$pid" \
@@ -77,14 +106,17 @@ kill_mpvpaper_pid() {
 # so live->live switches are seamless: no new process, no gap, no flicker.
 ipc_loadfile() {
   local video="$1" reply
-  [[ -S $IPC_SOCKET ]] || return 1
-  reply=$(printf '{"command":["loadfile",%s]}\n' "$(jq -nc --arg v "$video" '$v')" \
-    | socat - "UNIX-CONNECT:$IPC_SOCKET" 2>/dev/null) || return 1
+  reply=$(mpv_cmd "{\"command\":[\"loadfile\",$(jq -nc --arg v "$video" '$v')]}") || return 1
   [[ $reply == *'"error":"success"'* ]]
 }
 
 case "${1:-}" in
   set)
+    # Serialize set/stop so a picker racing a menu pick (or a stop) can never
+    # start two video layers at once. `omarchy-live-deps` locks a different
+    # resource, and nothing holding that lock ever calls `set`, so no deadlock.
+    lock_acquire "$LOCK_DIR"
+
     video="${2:-}"
     [[ -n $video && -f $video ]] || { echo "not a file: ${video:-<none>}" >&2; exit 1; }
     is_video "$video" || { echo "not a video file: $video" >&2; exit 1; }
@@ -116,8 +148,17 @@ case "${1:-}" in
 
     # Run on the bottom layer: above the theme wallpaper, below the bar and
     # windows. Theme changes only swap the static behind the video, so they
-    # never disturb the live wallpaper.
-    nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS --input-ipc-server=$IPC_SOCKET" '*' "$video" >/dev/null 2>&1 &
+    # never disturb the live wallpaper. The ipc-server option lives inside the
+    # -o string, so a state path containing whitespace would split it — fall
+    # back to fresh-start-only (still works, just no in-place swap) in that
+    # rare case.
+    ipc_opt=""
+    if [[ $IPC_SOCKET == *[[:space:]]* ]]; then
+      echo "live wallpaper: state path contains spaces; in-place switching disabled" >&2
+    else
+      ipc_opt=" --input-ipc-server=$IPC_SOCKET"
+    fi
+    nohup mpvpaper --auto-pause -l bottom -o "$MPV_OPTS$ipc_opt" '*' "$video" >/dev/null 2>&1 &
     new_pid=$!
 
     if ! wait_for_mpvpaper "$new_pid"; then
@@ -147,6 +188,7 @@ case "${1:-}" in
     echo "live wallpaper: $video"
     ;;
   stop)
+    lock_acquire "$LOCK_DIR"
     kill_mpvpaper
     rm -f "$LIVE_LINK" "$IPC_SOCKET"
     echo "live wallpaper stopped"
@@ -156,8 +198,19 @@ case "${1:-}" in
     exec "$0" set "$(readlink -f "$LIVE_LINK")"
     ;;
   status)
+    # Report what mpv is actually rendering, not just what the link says, so a
+    # crashed renderer doesn't masquerade as a running live wallpaper.
     if is_active; then
-      echo "$(readlink -f "$LIVE_LINK")"
+      playing=""
+      if [[ -S $IPC_SOCKET ]]; then
+        playing=$(mpv_cmd '{"command":["get_property","path"]}' \
+          | jq -r '.data // empty' 2>/dev/null) || true
+      fi
+      if [[ -n $playing && -f $playing ]]; then
+        echo "$playing"
+      else
+        echo "none"
+      fi
     else
       echo "none"
     fi

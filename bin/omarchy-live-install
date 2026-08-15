@@ -26,6 +26,52 @@ HOOK_PATH="$HOME/.config/omarchy/hooks/theme-set.d/10-live-wallpaper.sh"
 # with a missing dep) self-heals. `set` re-checks too.
 "$PLUGIN_DIR/bin/omarchy-live-deps" || true
 
+# ------------------------------ wallpaper double-click entry shims
+#
+# The desktop double-click (shell plugin background/Background.qml) calls the
+# stock `omarchy-theme-bg-switcher` / `omarchy-theme-bg-set` by bare name from
+# a `bash -c`. Shadow those two commands with user-space wrappers that delegate
+# to the live-capable picker and setter, so every wallpaper entry point
+# (menu, launcher, double-click) can select live wallpapers. A ~/.config/uwsm
+# env.d drop-in puts the shim directory first in the session PATH; it only
+# takes effect after the next session start. Recreated on every load so a
+# deleted shim or drop-in self-heals.
+SHIM_DIR="$HOME/.local/bin/omarchy-live-shims"
+mkdir -p "$SHIM_DIR"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  '# user-space shim -> live-capable picker (managed by taxin.live-wallpaper)' \
+  "script=\"$PLUGIN_DIR/bin/omarchy-bg-switcher\"" \
+  'if [[ -x $script ]]; then' \
+  '  exec "$script" "$@"' \
+  'fi' \
+  '# Plugin folder gone (partial uninstall): fall back to the stock picker.' \
+  'exec /usr/bin/omarchy-theme-bg-switcher "$@"' \
+  > "$SHIM_DIR/omarchy-theme-bg-switcher"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  '# user-space shim -> live/static setter (managed by taxin.live-wallpaper)' \
+  "script=\"$PLUGIN_DIR/bin/omarchy-bg-set\"" \
+  'if [[ -x $script ]]; then' \
+  '  exec "$script" "$@"' \
+  'fi' \
+  '# Plugin folder gone (partial uninstall): fall back to the stock setter.' \
+  'exec /usr/bin/omarchy-theme-bg-set "$@"' \
+  > "$SHIM_DIR/omarchy-theme-bg-set"
+chmod +x "$SHIM_DIR/omarchy-theme-bg-switcher" "$SHIM_DIR/omarchy-theme-bg-set"
+
+ENV_DIR="$HOME/.config/uwsm/env.d"
+ENV_FILE="$ENV_DIR/99-live-wallpaper"
+mkdir -p "$ENV_DIR"
+printf '%s\n' \
+  '# taxin.live-wallpaper: put the live wallpaper shims first so the desktop' \
+  '# double-click uses the live-capable background picker. Removed on uninstall.' \
+  'case ":$PATH:" in' \
+  '  *":$HOME/.local/bin/omarchy-live-shims:"*) ;;' \
+  '  *) PATH="$HOME/.local/bin/omarchy-live-shims${PATH:+:$PATH}" ;;' \
+  'esac' \
+  > "$ENV_FILE"
+
 # Already installed for this exact plugin location and generation.
 INSTALLED_V2="${PLUGIN_DIR}"$'\n'"v2"
 if [[ -f $INSTALLED_FILE ]] && [[ "$(cat "$INSTALLED_FILE" 2>/dev/null || true)" == "$INSTALLED_V2" ]]; then
