@@ -87,10 +87,12 @@ if [[ ! -f $MENU_EXT ]]; then
   printf '{\n}\n' > "$MENU_EXT"
 fi
 
-# Remove any previous live-wallpaper block and any bare style.background
-# override (migrates installs done by the old install.sh).
+# Remove any previous live-wallpaper block and any unmarked style.background
+# override that references our picker (migrates installs done by the old
+# install.sh). The targeted match leaves style.background rows owned by other
+# plugins or the user untouched.
 sed -i '/\/\/ omarchy-live-wallpaper-menu-start/,/\/\/ omarchy-live-wallpaper-menu-end/d' "$MENU_EXT"
-sed -i '/"style\.background":/d' "$MENU_EXT"
+sed -i '/"style\.background":.*omarchy-bg-switcher/d' "$MENU_EXT"
 
 MENU_BLOCK='  // omarchy-live-wallpaper-menu-start
   "style.background": {"icon":"","label":"Background","aliases":["background","wallpaper"],"when":"[ -x \"'$PLUGIN_DIR'/bin/omarchy-bg-switcher\" ]","action":"background=\"$('"$PLUGIN_DIR"'/bin/omarchy-bg-switcher)\"; [[ -n $background ]] && \"'$PLUGIN_DIR'/bin/omarchy-bg-set\" \"$background\""}
